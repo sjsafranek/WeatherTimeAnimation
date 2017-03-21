@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<title>OpenLayers: WMS + Time</title>
+
+		<link rel="stylesheet" href="font-awesome/css/font-awesome.min.css">
+
+		<script src="https://d3js.org/d3.v4.min.js"></script>
+
+		<link rel="stylesheet" href="ol.css" type="text/css">
+		<script src="ol.js"></script>
+		
+		<style>
+		
+			#legend {
+				position: absolute;
+				z-index: 100000;
+				left: 18px;
+				bottom: 25px;
+				background-color: white;
+				padding: 8px;
+				border-radius: 4px;
+				box-shadow: 0px 1px 7px 0px rgba(0,0,0,0.65098);
+			}
+
+			.animation-controls {
+				top: 65px;
+				left: .5em;
+			 }
+			
+			.ol-touch .animation-controls {
+				top: 80px;
+			}
+			
+			input.vertical[type=range] {
+				writing-mode: bt-lr; /* IE */
+				-webkit-appearance: slider-vertical; /* WebKit */
+				width: 8px;
+				height: 100px;
+				padding: 0 5px;
+			}
+			
+			.legend {
+				line-height: 18px;
+				color: #555;
+			}
+			
+			.legend i {
+				width: 18px;
+				height: 18px;
+				float: left;
+				margin-right: 8px;
+				opacity: 0.7;
+			}
+			
+		</style>
+		
+		<script type="text/javascript">
+			
+			// https://openlayers.org/en/latest/examples/wms-time.html
+			// http://openlayers.org/en/latest/examples/
+			
+			var map, 
+				layers,
+				ia_wms,
+				osm_tiles;
+			
+			
+			var attempt = 0;
+			var ready = false;
+			var tilesLoaded = 0;
+				
+			var frameRate = 2; // frames per second
+			var startDate = new Date('2005-08-29T13:00:00Z');
+			var animationInterval = null;
+
+
+			
+			function init(){
+
+				ia_wms = new ol.layer.Tile({
+					source: new ol.source.TileWMS(/** @type {olx.source.TileWMSOptions} */ {
+						url: "http://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r-t.cgi?",
+						params: {
+							'LAYERS': 'nexrad-n0r-wmst',
+							'TIME':   startDate.toISOString(),
+							'FORMAT': 'image/png'
+						}
+					}),
+					opacity: 0.7,
+					contrast:0.3
+				});
+				
+				ia_wms.getSource().addEventListener("tileloadend", function(event) {
+					tilesLoaded++;
+					if (9 <= tilesLoaded) {
+						ready = true;
+					}
+				});
+
+				ia_wms.getSource().addEventListener("tileloadstart", function(event) {
+					tilesLoaded=0;
+					ready = false;
+				});
+
+
+				osm_tiles = new ol.layer.Tile({
+					source: new ol.source.OSM()
+				});
+						
+				layers = [
+					osm_tiles,
+					ia_wms
+				]
+
+
+
+
+
+
+
+				function updateInfo() {
+					document
+						.getElementById('info')
+						.innerHTML = startDate.toISOString();
+				}
+				updateInfo();
+
+				function setTime() {
+					if (!ready) {
+						attempt++;
+						if (4 < attempt) {
+							ready = true;
+						}
+						return;
+					};
+					startDate.setMinutes(startDate.getMinutes() + 5);	// 5 minute intervals!!
+					if (startDate > Date.now()) {
+						startDate = threeHoursAgo();
+					}
+					layers[1].getSource().updateParams({'TIME': startDate.toISOString()});
+					updateInfo();
+				}
+				setTime();
+
+				var stop = function() {
+					document.getElementById("stop").style.display = "none";
+					document.getElementById("play").style.display = "";
+					if (animationInterval !== null) {
+						window.clearInterval(animationInterval);
+						animationId = null;
+					}
+				};
+
+				var play = function() {
+					stop();
+					document.getElementById("play").style.display = "none";
+					document.getElementById("stop").style.display = "";
+					animationInterval = window.setInterval(setTime, 1000 / frameRate);
+				};
+
+
+				AnimationControl = function(opt_options) {
+					var options = opt_options || {};
+
+					var play_button = document.createElement('button');
+					play_button.innerHTML = '<i class="fa fa-play" aria-hidden="true"></i>';
+					play_button.id = "play";
+
+					var stop_button = document.createElement('button');
+					stop_button.innerHTML = '<i class="fa fa-pause" aria-hidden="true"></i>';
+					stop_button.id = "stop";
+
+					play_button.addEventListener('click', play, false);
+					play_button.addEventListener('touchstart', play, false);
+
+					stop_button.addEventListener('click', stop, false);
+					stop_button.addEventListener('touchstart', stop, false);
+					stop_button.style.display = "none";
+					
+					var frame_rate_slider = document.createElement('input');
+					frame_rate_slider.type = "range";
+					frame_rate_slider.className = "vertical";
+					frame_rate_slider.min = 0.5;
+					frame_rate_slider.max = 5;
+					frame_rate_slider.step = 0.1;
+					frame_rate_slider.value = 2;
+					frame_rate_slider.addEventListener('change', function() { 
+						frameRate = this.value; 
+					}, false);
+
+					var element = document.createElement('div');
+					element.className = 'animation-controls ol-unselectable ol-control';
+					element.appendChild(play_button);
+					element.appendChild(stop_button);
+					
+					element.appendChild(frame_rate_slider);
+
+					ol.control.Control.call(this, {
+						element: element,
+						target: options.target
+					});
+
+				};
+				ol.inherits(AnimationControl, ol.control.Control);
+
+
+
+
+				map = new ol.Map({
+					layers: layers,
+					target: 'map',
+					view: new ol.View({
+						center: ol.proj.fromLonLat([-94.5703125, 38.0826895]),
+						zoom: 5
+					}),
+					controls: ol.control.defaults()
+								.extend([
+									new AnimationControl()
+								])
+				});
+
+
+				
+				var color = d3.scaleLinear()
+								.domain([0, 10])
+								.range(["blue", "yellow", "red"]);
+				
+				var legend = document.getElementsByClassName("legend")[0];
+				for (var i = 0; i < 10; i++) {
+					legend.appendChild(
+						(function(){
+							var elem = document.createElement('i');
+							elem.style.background = color(i);
+							return elem;
+						})()
+					);
+					legend.appendChild( document.createElement('br') );
+				}
+
+
+			}
+        
+		</script>
+	</head>
+	<body onload="init()">
+		<div id="map">
+		
+			<div id="legend" class="ol-control">
+				<!--
+				<div>
+					<img src="http://mesonet.agron.iastate.edu/docs/nexrad_composites/color_ramp.gif">
+				</div>
+				-->
+				<div class="legend"></div>
+				<div id="info">2005-08-29T13:00:00Z</div>
+			</div>
+
+		</div>
+	</body>
+</html>
+
+
+
